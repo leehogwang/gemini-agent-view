@@ -2,7 +2,14 @@
 
 # Gemini Agent View (`gemini-agent-view`)
 
-> Bringing Claude Code 1:1 Agent View, Background Session Manager & Workspace Tree TUI to Antigravity (AGY) & Google Gemini CLI.
+> **Non-invasive PTY wrapper for Google Antigravity (AGY) & Gemini CLI — preserving the native terminal experience 100% intact while adding Claude Code 1:1 Agent View & Background Session Management.**
+
+---
+
+## Architecture Philosophy
+
+* **Native Terminal Experience Intact**: Unlike full UI rewrites, `gemini-agent-view` runs as a lightweight PTY proxy wrapper. Your existing Gemini / Antigravity CLI terminal interface, prompts, model behavior, and native commands remain 100% unchanged.
+* **Seamless Agent View Overlay**: Adds a powerful Claude Code-style Agent View TUI overlay that stays out of your way until triggered (`←` `←` double-tap or `Ctrl+←`).
 
 ---
 
