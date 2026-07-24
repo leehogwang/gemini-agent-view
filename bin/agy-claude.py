@@ -243,7 +243,7 @@ def run_agent_view_tui(stdscr, origin_cid=None):
         curses.init_pair(2, curses.COLOR_RED, -1)       # Red
         curses.init_pair(3, curses.COLOR_YELLOW, -1)    # Yellow
         curses.init_pair(4, curses.COLOR_GREEN, -1)     # Green
-        curses.init_pair(5, curses.COLOR_MAGENTA, -1)   # Gemini Purple/Magenta
+        curses.init_pair(5, curses.COLOR_BLUE, -1)      # Blue Workspace Folder Header
         curses.init_pair(6, curses.COLOR_BLUE, -1)      # Gemini Blue
         curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_BLUE) # Selection Row Highlight
 
@@ -308,7 +308,7 @@ def run_agent_view_tui(stdscr, origin_cid=None):
             item_tree_idx = line_offset
 
             if item["type"] == "header":
-                # Render Folder Header (e.g. ~/food/Food-Nutrition-Estimation)
+                # Render Folder Header in Sleek Bold Blue (e.g. ~/food/Food-Nutrition-Estimation)
                 ws_name = item["short_ws"]
                 try:
                     stdscr.attron(curses.color_pair(5) | curses.A_BOLD)
