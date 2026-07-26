@@ -14,10 +14,12 @@ import struct
 import time
 import ctypes
 import unicodedata
+import shutil
 
-AGY_BINARY = "/home/202421012/.local/bin/agy"
-CONV_DIR = "/home/202421012/.gemini/antigravity-cli/conversations"
-HISTORY_PATH = "/home/202421012/.gemini/antigravity-cli/history.jsonl"
+AGY_BINARY = shutil.which("agy") or os.path.expanduser("~/.local/bin/agy")
+CONV_DIR = os.path.expanduser("~/.gemini/antigravity-cli/conversations")
+HISTORY_PATH = os.path.expanduser("~/.gemini/antigravity-cli/history.jsonl")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def set_process_name(title="agy-claude"):
     try:
@@ -161,7 +163,7 @@ def get_real_sessions():
             "mtime": mtime,
             "path": f,
             "status": get_session_status(cid, mtime, f),
-            "workspace": "/home/202421012/gemini-like-claude",
+            "workspace": REPO_ROOT,
             "title": f"agy Session {cid[:8]}",
             "summary": "",
             "time_ago": format_time_ago(mtime),

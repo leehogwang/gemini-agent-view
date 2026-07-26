@@ -4,6 +4,9 @@
   "type": "module",
   "description": "Terminal UI coding agent CLI with 1:1 Claude Code Agent View parity",
   "main": "dist/cli.js",
+  "bin": {
+    "agy-claude": "bin/agy-claude"
+  },
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/cli.tsx",
