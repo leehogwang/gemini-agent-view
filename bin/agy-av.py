@@ -21,7 +21,7 @@ CONV_DIR = os.path.expanduser("~/.gemini/antigravity-cli/conversations")
 HISTORY_PATH = os.path.expanduser("~/.gemini/antigravity-cli/history.jsonl")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def set_process_name(title="agy-claude"):
+def set_process_name(title="agy-av"):
     try:
         libc = ctypes.CDLL("libc.so.6")
         libc.prctl(15, title.encode("utf-8"), 0, 0, 0)
@@ -77,6 +77,11 @@ def shorten_workspace(ws_path):
     if ws_path.startswith(home):
         return "~" + ws_path[len(home):]
     return ws_path
+
+def resolve_new_session_workspace(tree_items, current_tree_idx, fallback):
+    if not tree_items or current_tree_idx >= len(tree_items):
+        return fallback
+    return tree_items[current_tree_idx].get("workspace", fallback)
 
 # Global active background sessions registry: map conversation_id -> { "pid": pid, "master_fd": master_fd, "last_activity": float, "is_generating": bool, "suppress_until": float }
 ACTIVE_SESSIONS = {}
@@ -236,7 +241,7 @@ def get_grouped_workspace_tree(origin_cid=None):
     return tree_items, selectable_indices
 
 def run_agent_view_tui(stdscr, origin_cid=None):
-    set_process_name("agy-claude")
+    set_process_name("agy-av")
     curses.curs_set(0)
     curses.use_default_colors()
     
@@ -435,7 +440,8 @@ def run_agent_view_tui(stdscr, origin_cid=None):
             if target_item.get("type") == "session":
                 return {"action": "attach", "session_id": target_item["session"]["id"]}
         elif key in (14, ord('n')):  # Ctrl+N / 'n'
-            return {"action": "new"}
+            target_ws = resolve_new_session_workspace(tree_items, current_tree_idx, os.getcwd())
+            return {"action": "new", "workspace": target_ws}
         elif key in (24, 4, ord('x'), ord('d')):  # Ctrl+X / Ctrl+D / 'x' / 'd'
             sel_tree_idx = selectable_indices[selected_sel_idx]
             target_item = tree_items[sel_tree_idx]
@@ -463,8 +469,8 @@ def sync_winsize(master_fd):
     except:
         pass
 
-def run_pty_proxy(cmd_args, current_cid=None):
-    set_process_name("agy-claude")
+def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
+    set_process_name("agy-av")
     if "--dangerously-skip-permissions" not in cmd_args:
         cmd_args = ["--dangerously-skip-permissions"] + cmd_args
 
@@ -479,6 +485,11 @@ def run_pty_proxy(cmd_args, current_cid=None):
         cmd = [AGY_BINARY] + cmd_args
         pid, master_fd = pty.fork()
         if pid == 0:
+            if target_workspace:
+                try:
+                    os.chdir(target_workspace)
+                except OSError:
+                    pass
             os.execv(AGY_BINARY, cmd)
 
         if current_cid:
@@ -582,7 +593,7 @@ def run_pty_proxy(cmd_args, current_cid=None):
                                     "suppress_until": time.time() + 2.0,
                                 }
                             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_tty)
-                            return run_pty_proxy([])
+                            return run_pty_proxy([], target_workspace=res.get("workspace"))
 
                         else:
                             shadow_buffer = ""
@@ -646,14 +657,14 @@ def run_pty_proxy(cmd_args, current_cid=None):
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_tty)
 
 def main():
-    set_process_name("agy-claude")
+    set_process_name("agy-av")
     args = sys.argv[1:]
     if len(args) > 0 and args[0] in ("--agent-view", "-a", "agents", "/agents"):
         res = curses.wrapper(lambda s: run_agent_view_tui(s))
         if res and res.get("action") == "attach":
             run_pty_proxy(["--conversation", res["session_id"]], current_cid=res["session_id"])
         elif res and res.get("action") == "new":
-            run_pty_proxy([])
+            run_pty_proxy([], target_workspace=res.get("workspace"))
         return
 
     run_pty_proxy(args)

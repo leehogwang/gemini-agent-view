@@ -5,7 +5,7 @@
   "description": "Terminal UI coding agent CLI with 1:1 Claude Code Agent View parity",
   "main": "dist/cli.js",
   "bin": {
-    "agy-claude": "bin/agy-claude"
+    "agy-av": "bin/agy-av"
   },
   "scripts": {
     "build": "tsc",

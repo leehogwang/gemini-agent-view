@@ -1,0 +1,5 @@
+#!/bin/bash
+# agy-av shell wrapper
+# exec -a overwrites argv[0] so ps/top/htop shows "agy-av" instead of "python3"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+exec -a agy-av python3 "$SCRIPT_DIR/agy-av.py" "$@"

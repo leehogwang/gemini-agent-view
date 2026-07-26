@@ -162,7 +162,7 @@ def main():
     # Default launch: run real agy interactive session directly
     # If agy binary is invoked directly, user gets 100% original agy design and features!
     print("Launching original agy with Agent View support...")
-    print("Tip: Run 'agy-claude --agent-view' or press Ctrl+C then type 'agy-claude --agent-view' to open Agent View.")
+    print("Tip: Run 'agy-av --agent-view' or press Ctrl+C then type 'agy-av --agent-view' to open Agent View.")
     time.sleep(0.5)
 
     cmd = [AGY_BINARY] + sys.argv[1:]

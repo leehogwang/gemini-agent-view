@@ -1,5 +1,0 @@
-#!/bin/bash
-# agy-claude shell wrapper
-# exec -a overwrites argv[0] so ps/top/htop shows "agy-claude" instead of "python3"
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-exec -a agy-claude python3 "$SCRIPT_DIR/agy-claude.py" "$@"
