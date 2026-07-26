@@ -19,7 +19,63 @@ import shutil
 AGY_BINARY = shutil.which("agy") or os.path.expanduser("~/.local/bin/agy")
 CONV_DIR = os.path.expanduser("~/.gemini/antigravity-cli/conversations")
 HISTORY_PATH = os.path.expanduser("~/.gemini/antigravity-cli/history.jsonl")
+WORKSPACE_OVERRIDE_PATH = os.path.expanduser("~/.gemini/antigravity-cli/agy_av_workspace_overrides.json")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def load_workspace_overrides():
+    try:
+        with open(WORKSPACE_OVERRIDE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_workspace_override(cid, workspace):
+    data = load_workspace_overrides()
+    data[cid] = workspace
+    try:
+        with open(WORKSPACE_OVERRIDE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+def remove_workspace_override(cid):
+    data = load_workspace_overrides()
+    if cid in data:
+        del data[cid]
+        try:
+            with open(WORKSPACE_OVERRIDE_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+
+def find_and_kill_agy_pids_for_cid(cid):
+    # agy doesn't honor a client-supplied --conversation id for brand new
+    # sessions, and other agy-av terminal processes don't share our
+    # in-memory ACTIVE_SESSIONS, so we scan /proc for the real process.
+    killed = []
+    try:
+        pid_dirs = os.listdir("/proc")
+    except OSError:
+        return killed
+    for pid_str in pid_dirs:
+        if not pid_str.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid_str}/cmdline", "rb") as f:
+                raw = f.read()
+            cmdline = " ".join(p.decode("utf-8", "ignore") for p in raw.split(b"\x00") if p)
+            if "--conversation" in cmdline and cid in cmdline:
+                os.kill(int(pid_str), signal.SIGTERM)
+                killed.append(int(pid_str))
+        except (OSError, ProcessLookupError, PermissionError, ValueError):
+            pass
+    return killed
+
+def wait_for_pids_exit(pids, timeout=2.0):
+    deadline = time.time() + timeout
+    for p in pids:
+        while time.time() < deadline and is_pid_alive(p):
+            time.sleep(0.1)
 
 def set_process_name(title="agy-av"):
     try:
@@ -159,6 +215,7 @@ def get_session_status(cid, mtime, db_path):
 
 def get_real_sessions():
     db_files = glob.glob(os.path.join(CONV_DIR, "*.db"))
+    overrides = load_workspace_overrides()
     sessions_by_id = {}
     for f in db_files:
         cid = os.path.basename(f).replace(".db", "")
@@ -168,7 +225,7 @@ def get_real_sessions():
             "mtime": mtime,
             "path": f,
             "status": get_session_status(cid, mtime, f),
-            "workspace": REPO_ROOT,
+            "workspace": overrides.get(cid, REPO_ROOT),
             "title": f"agy Session {cid[:8]}",
             "summary": "",
             "time_ago": format_time_ago(mtime),
@@ -447,17 +504,24 @@ def run_agent_view_tui(stdscr, origin_cid=None):
             target_item = tree_items[sel_tree_idx]
             if target_item.get("type") == "session":
                 target_cid = target_item["session"]["id"]
+                killed_pids = []
                 if target_cid in ACTIVE_SESSIONS:
                     try:
                         os.kill(ACTIVE_SESSIONS[target_cid]["pid"], signal.SIGTERM)
+                        killed_pids.append(ACTIVE_SESSIONS[target_cid]["pid"])
                     except:
                         pass
                     del ACTIVE_SESSIONS[target_cid]
+                # Also reach processes owned by *other* agy-av terminals,
+                # since ACTIVE_SESSIONS is per-process and won't know about them.
+                killed_pids.extend(find_and_kill_agy_pids_for_cid(target_cid))
+                wait_for_pids_exit(killed_pids)
                 try:
                     if os.path.exists(target_item["session"]["path"]):
                         os.remove(target_item["session"]["path"])
                 except:
                     pass
+                remove_workspace_override(target_cid)
                 selected_sel_idx = max(0, selected_sel_idx - 1)
         elif key in (27, ord('q')):  # Esc / 'q'
             return {"action": "return", "origin_cid": origin_cid}
@@ -475,6 +539,9 @@ def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
         cmd_args = ["--dangerously-skip-permissions"] + cmd_args
 
     is_new_process = False
+    pending_new_cid = False
+    known_db_before = set()
+    pending_deadline = 0
     if current_cid and current_cid in ACTIVE_SESSIONS:
         sess = ACTIVE_SESSIONS[current_cid]
         pid = sess["pid"]
@@ -483,6 +550,14 @@ def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
     else:
         is_new_process = True
         cmd = [AGY_BINARY] + cmd_args
+        # agy assigns its own conversation id for brand new sessions (it
+        # ignores a client-supplied --conversation id it hasn't seen before),
+        # so we don't know the real id up front. Snapshot existing .db files
+        # and diff against them once the child creates its own, below.
+        pending_new_cid = current_cid is None
+        known_db_before = set(glob.glob(os.path.join(CONV_DIR, "*.db"))) if pending_new_cid else set()
+        pending_deadline = time.time() + 15.0
+
         pid, master_fd = pty.fork()
         if pid == 0:
             if target_workspace:
@@ -515,6 +590,24 @@ def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
         tty.setraw(sys.stdin.fileno())
         while True:
             drain_background_ptys(exclude_fd=master_fd)
+
+            if pending_new_cid:
+                if time.time() >= pending_deadline:
+                    pending_new_cid = False
+                else:
+                    new_dbs = set(glob.glob(os.path.join(CONV_DIR, "*.db"))) - known_db_before
+                    if new_dbs:
+                        current_cid = os.path.basename(sorted(new_dbs)[0])[:-3]
+                        if target_workspace:
+                            save_workspace_override(current_cid, target_workspace)
+                        ACTIVE_SESSIONS[current_cid] = {
+                            "pid": pid,
+                            "master_fd": master_fd,
+                            "last_activity": time.time(),
+                            "is_generating": False,
+                            "suppress_until": time.time() + 2.0,
+                        }
+                        pending_new_cid = False
 
             r, w, e = select.select([sys.stdin.fileno(), master_fd], [], [], 0.05)
 
@@ -550,6 +643,13 @@ def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
                                 last_left_arrow_time = now
 
                     if trigger_agent_view:
+                        # Entering curses alt-screen mode can itself kick a spurious
+                        # resize/redraw burst out of the origin session's pty (e.g. via
+                        # SIGWINCH). Without suppression that gets misread as real
+                        # generation activity and flashes "Running" for nothing.
+                        if current_cid and current_cid in ACTIVE_SESSIONS:
+                            ACTIVE_SESSIONS[current_cid]["suppress_until"] = time.time() + 2.0
+
                         sys.stdout.write("\x1b[?1049h")
                         sys.stdout.flush()
                         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_tty)

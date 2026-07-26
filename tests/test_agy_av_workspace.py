@@ -6,6 +6,7 @@ Plain assert-based script, no test framework. Run: python3 tests/test_agy_av_wor
 import importlib.util
 import os
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODULE_PATH = os.path.join(REPO_ROOT, "bin", "agy-av.py")
@@ -15,6 +16,23 @@ agy_av = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(agy_av)
 
 resolve_new_session_workspace = agy_av.resolve_new_session_workspace
+
+
+def test_workspace_override_round_trip(tmp_path):
+    agy_av.WORKSPACE_OVERRIDE_PATH = str(tmp_path / "overrides.json")
+    agy_av.save_workspace_override("cid-1", "/home/u/foo")
+    agy_av.save_workspace_override("cid-2", "/home/u/bar")
+    assert agy_av.load_workspace_overrides() == {"cid-1": "/home/u/foo", "cid-2": "/home/u/bar"}
+
+    agy_av.remove_workspace_override("cid-1")
+    assert agy_av.load_workspace_overrides() == {"cid-2": "/home/u/bar"}
+    print("PASS: workspace override save/load/remove round-trips correctly")
+
+
+def test_workspace_override_missing_file_returns_empty(tmp_path):
+    agy_av.WORKSPACE_OVERRIDE_PATH = str(tmp_path / "does_not_exist.json")
+    assert agy_av.load_workspace_overrides() == {}
+    print("PASS: missing override file -> returns empty dict")
 
 
 def test_session_row_focused_returns_session_workspace():
@@ -55,4 +73,8 @@ if __name__ == "__main__":
     test_header_row_focused_returns_header_workspace()
     test_empty_tree_items_returns_fallback()
     test_out_of_range_idx_returns_fallback()
+    with tempfile.TemporaryDirectory() as td:
+        import pathlib
+        test_workspace_override_round_trip(pathlib.Path(td))
+        test_workspace_override_missing_file_returns_empty(pathlib.Path(td))
     print("\nALL TESTS PASSED")
