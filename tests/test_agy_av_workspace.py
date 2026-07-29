@@ -35,6 +35,27 @@ def test_workspace_override_missing_file_returns_empty(tmp_path):
     print("PASS: missing override file -> returns empty dict")
 
 
+def test_suppress_when_idle_before_entering_agent_view():
+    now = 1000.0
+    sess = {"is_generating": False, "last_activity": now - 1.0}
+    assert agy_av.should_suppress_on_agent_view_entry(sess, now) is True
+    print("PASS: idle session -> suppress spurious entry burst")
+
+
+def test_no_suppress_when_actively_generating():
+    now = 1000.0
+    sess = {"is_generating": True, "last_activity": now - 1.0}
+    assert agy_av.should_suppress_on_agent_view_entry(sess, now) is False
+    print("PASS: actively generating session -> do NOT suppress (stays Running)")
+
+
+def test_suppress_when_generating_flag_stale():
+    now = 1000.0
+    sess = {"is_generating": True, "last_activity": now - 10.0}
+    assert agy_av.should_suppress_on_agent_view_entry(sess, now) is True
+    print("PASS: stale is_generating (>6s old) -> treated as idle, suppress")
+
+
 def test_session_row_focused_returns_session_workspace():
     tree_items = [
         {"type": "header", "workspace": "/home/u/foo", "short_ws": "~/foo"},
@@ -77,4 +98,7 @@ if __name__ == "__main__":
         import pathlib
         test_workspace_override_round_trip(pathlib.Path(td))
         test_workspace_override_missing_file_returns_empty(pathlib.Path(td))
+    test_suppress_when_idle_before_entering_agent_view()
+    test_no_suppress_when_actively_generating()
+    test_suppress_when_generating_flag_stale()
     print("\nALL TESTS PASSED")

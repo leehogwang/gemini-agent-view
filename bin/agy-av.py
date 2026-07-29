@@ -139,6 +139,14 @@ def resolve_new_session_workspace(tree_items, current_tree_idx, fallback):
         return fallback
     return tree_items[current_tree_idx].get("workspace", fallback)
 
+def should_suppress_on_agent_view_entry(sess, now):
+    # Entering Agent View can kick a spurious redraw burst out of the origin
+    # session's pty, which would otherwise be misread as real generation. Only
+    # suppress when nothing was actually in flight -- otherwise a task that's
+    # genuinely still generating gets masked and shows as "Done" too early.
+    was_active = sess.get("is_generating") and (now - sess.get("last_activity", 0) < 6.0)
+    return not was_active
+
 # Global active background sessions registry: map conversation_id -> { "pid": pid, "master_fd": master_fd, "last_activity": float, "is_generating": bool, "suppress_until": float }
 ACTIVE_SESSIONS = {}
 
@@ -643,12 +651,10 @@ def run_pty_proxy(cmd_args, current_cid=None, target_workspace=None):
                                 last_left_arrow_time = now
 
                     if trigger_agent_view:
-                        # Entering curses alt-screen mode can itself kick a spurious
-                        # resize/redraw burst out of the origin session's pty (e.g. via
-                        # SIGWINCH). Without suppression that gets misread as real
-                        # generation activity and flashes "Running" for nothing.
                         if current_cid and current_cid in ACTIVE_SESSIONS:
-                            ACTIVE_SESSIONS[current_cid]["suppress_until"] = time.time() + 2.0
+                            sess = ACTIVE_SESSIONS[current_cid]
+                            if should_suppress_on_agent_view_entry(sess, time.time()):
+                                sess["suppress_until"] = time.time() + 2.0
 
                         sys.stdout.write("\x1b[?1049h")
                         sys.stdout.flush()
